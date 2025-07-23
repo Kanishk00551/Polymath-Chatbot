@@ -218,25 +218,63 @@ Based ONLY on the following context from a document, answer the user's question.
 ### Answer:
 """
         
+# --- NEW DYNAMIC CHAT LOGIC ---
         try:
-            # Invoke the LLM with the new, structured prompt
+            # 1. Search for relevant documents in the database
+            relevant_docs = db.similarity_search(user_input, k=5)
+            
+            # Combine text and image context from found documents
+            context = "\n---\n".join([doc.page_content for doc in relevant_docs])
+
+            # 2. Check if any context was found
+            if context.strip():
+                # If context is found, create a RAG (Retrieval-Augmented Generation) prompt
+                # This prompt encourages using the context but doesn't forbid general knowledge.
+                final_prompt = f"""
+You are a helpful AI assistant. Use the context provided below from uploaded documents to answer the user's question.
+Prioritize information from the context. If the context doesn't contain the answer, you may use your general knowledge.
+
+### Context:
+{context}
+
+### User Question:
+{user_input}
+
+### Answer:
+"""
+            else:
+                # If no context is found, create a general conversational prompt
+                final_prompt = f"""
+You are a helpful and friendly AI assistant. Answer the user's question.
+
+### User Question:
+{user_input}
+
+### Answer:
+"""
+
+            # 3. Invoke the LLM with the chosen prompt
             response = llm.invoke([HumanMessage(content=final_prompt)])
             reply = response.content
+
+            # Display the response
             with st.chat_message("assistant"):
                 st.markdown(reply)
             st.session_state.messages.append({"role": "assistant", "content": reply})
             
-            # Note: Saving user input and assistant replies to the vector DB can 
-            # sometimes pollute the search results. Consider if this is desired behavior.
-            db.add_documents([
-                Document(page_content=user_input, metadata={"role": "user"}),
-                Document(page_content=reply, metadata={"role": "assistant"})
-            ])
-            db.persist()
+            # Optional: Decide if you still want to save general chit-chat to the database.
+            # You might want to only save conversations that involved context.
+            if context.strip():
+                db.add_documents([
+                    Document(page_content=user_input, metadata={"role": "user"}),
+                    Document(page_content=reply, metadata={"role": "assistant"})
+                ])
+                db.persist()
+
         except Exception as e:
-            st.error("Groq API failed.")
+            st.error("An error occurred during chat processing.")
             st.exception(e)
-        # === END OF CHANGE ===
+        # --- END OF NEW LOGIC ---
 
     except Exception as e:
         st.error("Unexpected failure during chat handling.")
