@@ -15,6 +15,8 @@ from langchain.schema import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage, AIMessage
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 # Remove SSL cert errors if present
 if "SSL_CERT_FILE" in os.environ:
