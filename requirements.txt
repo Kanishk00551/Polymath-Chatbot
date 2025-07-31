@@ -21,4 +21,5 @@ sse_starlette
 wikipedia
 pysqlite3-binary
 torch 
+google-generativeai
 
