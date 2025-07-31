@@ -30,7 +30,7 @@ except ImportError:
 # Load environment variables from .env file or Streamlit secrets
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # NEW: Get Gemini Key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Using GEMINI_API_KEY as requested
 
 # --- CONSTANTS ---
 CHROMA_DIR = "chroma_memory_db"
@@ -47,11 +47,11 @@ llm = ChatGroq(model="gemma2-9b-it", groq_api_key=GROQ_API_KEY)
 embedder = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedder)
 
-# NEW: Configure the Gemini API
+# Configure the Gemini API
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 else:
-    print("GEMINI_API_KEY not found. Image analysis will be skipped.")
+    print("Warning: GEMINI_API_KEY not found. Image analysis will be skipped.")
 
 # --- HELPER FUNCTIONS ---
 
@@ -65,7 +65,7 @@ def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str | None:
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         image_part = {
-            "mime_type": "image/jpeg", # Works for jpg, jpeg, png
+            "mime_type": "image/jpeg",
             "data": image_bytes
         }
         response = model.generate_content([prompt, image_part])
@@ -75,7 +75,7 @@ def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str | None:
         return None
 
 def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
-    """Extracts images from a PDF."""
+    """Extracts images from a PDF and saves them as JPEG."""
     saved_images = []
     try:
         doc = fitz.open(pdf_path)
@@ -84,13 +84,16 @@ def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
             for img_index, img in enumerate(doc.get_page_images(page_num)):
                 xref = img[0]
                 base_image = doc.extract_image(xref)
-                image_bytes, image_ext = base_image["image"], base_image["ext"]
-                # Convert non-jpeg images to jpeg for consistency
-                if image_ext != "jpeg":
-                    img_pil = Image.open(io.BytesIO(image_bytes))
-                    with io.BytesIO() as output:
-                        img_pil.convert("RGB").save(output, format="JPEG")
-                        image_bytes = output.getvalue()
+                image_bytes = base_image["image"]
+                
+                # Convert all images to JPEG for consistency with the Gemini API
+                img_pil = Image.open(io.BytesIO(image_bytes))
+                if img_pil.mode != "RGB":
+                    img_pil = img_pil.convert("RGB")
+                
+                with io.BytesIO() as output:
+                    img_pil.save(output, format="JPEG")
+                    image_bytes = output.getvalue()
 
                 image_filename = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_p{page_num+1}_{img_index}.jpeg"
                 image_path = os.path.join(output_dir, image_filename)
@@ -132,7 +135,7 @@ with col1:
     if uploaded_image and st.session_state.file_status.get(uploaded_image.name) != "processed":
         st.image(uploaded_image, caption="Uploaded Image")
         with st.spinner(f"Analyzing {uploaded_image.name}..."):
-            vision_output = analyze_image_with_gemini(uploaded_image.getvalue(), "Describe this image in detail.") # Use new function
+            vision_output = analyze_image_with_gemini(uploaded_image.getvalue(), "Describe this image in detail.")
             if vision_output:
                 st.success("Image analysis complete.")
                 doc = Document(page_content=vision_output, metadata={"role": "vision", "source": uploaded_image.name})
@@ -151,8 +154,7 @@ with col1:
                     f.write(pdf.getbuffer())
 
                 with st.spinner(f"Processing {pdf.name}..."):
-                    # Text
-                    try:
+                    try: # Text Processing
                         docs = PyPDFLoader(file_path).load()
                         if docs:
                             chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
@@ -161,13 +163,14 @@ with col1:
                             st.success(f"Embedded {len(chunks)} text chunks.")
                     except Exception as e:
                         st.error(f"Text Processing Error: {e}")
-                    # Images
+                    
+                    # Image Processing
                     image_paths = extract_images_from_pdf(file_path, os.path.join(PDF_IMAGE_DIR, os.path.splitext(pdf.name)[0]))
                     if image_paths:
                         st.info(f"Found {len(image_paths)} images to analyze.")
                         for img_path in image_paths:
                             with open(img_path, "rb") as img_file:
-                                vision_output = analyze_image_with_gemini(img_file.read(), "Describe this image from a PDF.") # Use new function
+                                vision_output = analyze_image_with_gemini(img_file.read(), "Describe this image from a PDF.")
                             if vision_output:
                                 doc = Document(page_content=vision_output, metadata={"role": "vision", "source": pdf.name})
                                 db.add_documents([doc]); db.persist()
@@ -192,7 +195,7 @@ with col2:
                     relevant_docs = db.similarity_search(user_input, k=3)
                     text_context = "\n---\n".join([doc.page_content for doc in relevant_docs if doc.metadata.get("role") != "vision"])
                     image_context = "\n---\n".join([doc.page_content for doc in relevant_docs if doc.metadata.get("role") == "vision"])
-
+                    
                     chat_history = st.session_state.messages[-5:-1]
                     formatted_chat_history = "\n".join([f"{msg['role']}: {msg['content']}" for msg in chat_history])
 
