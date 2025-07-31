@@ -47,13 +47,9 @@ The chatbot's workflow is designed to be a robust RAG pipeline:
 
 ---
 
-## 🚀 Setup and Installation
+## 🚀 To Use
 
-Follow these steps to run the Polymath Chatbot on your local machine.
 
-### 1. Clone the Repository
-
-```bash
 git clone [https://github.com/Kanishk00551/Polymath-Chatbot.git](https://github.com/Kanishk00551/Polymath-Chatbot.git)
 cd Polymath-Chatbot
 
