@@ -2,55 +2,56 @@
 
 <img width="1909" height="830" alt="image" src="https://github.com/user-attachments/assets/51e593ee-a2c9-4925-bc53-65918521ddb8" />
 
-🧠 Polymath Chatbot — Gemini Pro Image & Text Interface
-A lightweight Python script to interact with Google Gemini Pro using text and image inputs. This tool allows you to send natural language queries and optional images to Gemini Pro and receive intelligent, multimodal responses — perfect for building intelligent assistants or integrating into larger GenAI workflows.
+# 🧠 Polymath Chatbot — Gemini Pro Image & Text Interface
 
-🚀 Features
-🔤 Text Input — Chat with Gemini Pro using plain text.
+A lightweight Python script to interact with **Google Gemini Pro** using **text and image inputs**. This tool allows you to send natural language queries and optional images to Gemini Pro and receive intelligent, multimodal responses — perfect for building intelligent assistants or integrating into larger GenAI workflows.
 
-🖼️ Image Input — Attach a local image to get context-aware responses.
+## 🚀 Features
 
-📂 Automatic Image Encoding — Converts local image files to base64 automatically.
+- 🔤 **Text Input** — Chat with Gemini Pro using plain text.
+- 🖼️ **Image Input** — Attach a local image to get context-aware responses.
+- 📂 **Automatic Image Encoding** — Converts local image files to base64 automatically.
+- ✅ **Error Handling** — Checks for API key, file path, and response status.
+- 🛠️ Minimal dependencies, simple script, fast testing.
 
-✅ Error Handling — Checks for API key, file path, and response status.
+## 🗂️ File Structure
 
-🛠️ Minimal dependencies, simple script, fast testing.
+📁 Polymath-Chatbot/
+├── Newgeminipro.py # Main script to interact with Gemini Pro using image + text
 
-🗂️ File Structure
-vbnet
+markdown
 Copy
 Edit
-📁 Polymath-Chatbot/
-│
-├── Newgeminipro.py    # Main script to interact with Gemini Pro using image + text
-⚙️ Requirements
-Python 3.7+
 
-google.generativeai
+## ⚙️ Requirements
 
-PIL (Python Imaging Library or pillow)
+- Python 3.7+
+- `google-generativeai`
+- `Pillow` (for image processing)
 
 Install dependencies:
 
-bash
-Copy
-Edit
+```bash
 pip install google-generativeai pillow
+
 🔐 Setup
 Get your API key from Google AI Studio
 
-Set your key as an environment variable:
+Set your API key as an environment variable:
+
+Linux / macOS:
 
 bash
 Copy
 Edit
 export GOOGLE_API_KEY="your-api-key-here"
-(Windows Command Prompt)
+Windows (CMD):
 
 cmd
 Copy
 Edit
 set GOOGLE_API_KEY=your-api-key-here
+
 💡 Usage
 Run the script:
 
@@ -62,9 +63,7 @@ You will be prompted to enter:
 
 The path to a local image (e.g. test.jpg)
 
-Your query (e.g. "What does this image represent?")
-
-The Gemini Pro model will respond accordingly using both text and image.
+Your query (e.g. What does this image represent?)
 
 🧪 Example
 bash
@@ -72,7 +71,7 @@ Copy
 Edit
 Enter the path of the image: dog.jpg
 Enter your query: What breed is this dog?
-➡️ Response:
+Response:
 
 css
 Copy
@@ -81,14 +80,14 @@ This appears to be a Labrador Retriever, known for its friendly nature and intel
 🧠 Powered By
 Google Generative AI SDK
 
-Gemini Pro (Vision Multimodal Model)
+Gemini Pro (Multimodal Vision Model)
 
 📌 Notes
-Ensure your image path is correct and the file exists.
+Ensure the image path is correct and the file exists.
 
 The script uses model.generate_content() with both image and text inputs.
 
-Gemini Vision Pro may take a few seconds to respond depending on image size and network.
+Gemini Pro might take a few seconds to generate a response.
 
-🧾 License
-This project is under the MIT License. Feel free to use and modify.
+📄 License
+This project is licensed under the MIT License.
