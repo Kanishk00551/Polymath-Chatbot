@@ -2,92 +2,60 @@
 
 <img width="1909" height="830" alt="image" src="https://github.com/user-attachments/assets/51e593ee-a2c9-4925-bc53-65918521ddb8" />
 
-# 🧠 Polymath Chatbot — Gemini Pro Image & Text Interface
+# Polymath Chatbot 🧠
 
-A lightweight Python script to interact with **Google Gemini Pro** using **text and image inputs**. This tool allows you to send natural language queries and optional images to Gemini Pro and receive intelligent, multimodal responses — perfect for building intelligent assistants or integrating into larger GenAI workflows.
+Polymath Chatbot is a sophisticated, multi-modal AI assistant built with Python and Streamlit. It can understand and process information from both text and images contained within uploaded PDF documents, as well as from direct image uploads. The chatbot is designed to provide context-aware answers by leveraging a powerful Retrieval-Augmented Generation (RAG) system, conversational memory, and the ability to fall back on general knowledge.
 
-## 🚀 Features
+---
 
-- 🔤 **Text Input** — Chat with Gemini Pro using plain text.
-- 🖼️ **Image Input** — Attach a local image to get context-aware responses.
-- 📂 **Automatic Image Encoding** — Converts local image files to base64 automatically.
-- ✅ **Error Handling** — Checks for API key, file path, and response status.
-- 🛠️ Minimal dependencies, simple script, fast testing.
+## ✨ Features
 
-## 🗂️ File Structure
+* **Multi-Modal Input**: Accepts both PDF documents and direct image uploads (`.jpg`, `.jpeg`, `.png`).
+* **PDF Text Analysis**: Extracts and embeds textual content from PDFs for semantic search.
+* **Image Analysis**:
+    * Extracts images embedded within PDF files.
+    * Analyzes both uploaded images and extracted PDF images using the powerful **Google Gemini Vision API**.
+* **Hybrid Memory System**:
+    * **Long-Term Memory**: Uses **ChromaDB** as a persistent vector store to remember information from all uploaded documents.
+    * **Short-Term Memory**: Remembers the last few turns of the current conversation to keep track of context (like the user's name).
+* **Intelligent Response Generation**:
+    * Employs a sophisticated RAG pipeline to retrieve relevant document and conversational context.
+    * Uses the high-speed **Groq API** (running Gemma2) for generating text responses.
+    * Follows a "context-first" approach: it first tries to answer using documents and conversation history before resorting to its general knowledge.
+* **Interactive UI**: A clean and user-friendly web interface built with **Streamlit**.
 
-📁 Polymath-Chatbot/
-├── Newgeminipro.py # Main script to interact with Gemini Pro using image + text
+---
 
-markdown
-Copy
-Edit
+## ⚙️ How It Works
 
-## ⚙️ Requirements
+The chatbot's workflow is designed to be a robust RAG pipeline:
 
-- Python 3.7+
-- `google-generativeai`
-- `Pillow` (for image processing)
+1.  **File Upload**: The user uploads a PDF or an image through the Streamlit interface.
+2.  **Processing**:
+    * For PDFs, the application extracts both the text and any embedded images.
+    * All text is split into chunks.
+3.  **Embedding & Storage**:
+    * Text chunks are converted into vector embeddings using a Hugging Face Sentence Transformer model (`all-MiniLM-L6-v2`).
+    * Images are sent to the **Google Gemini Vision API** for detailed descriptions. These descriptions are then embedded.
+    * All embeddings are stored in a local **ChromaDB** vector database.
+4.  **User Interaction**: The user asks a question in the chat window.
+5.  **Context Retrieval**:
+    * The application performs a similarity search in ChromaDB to find the most relevant document chunks and image descriptions.
+    * It also retrieves the last few messages from the current conversation history.
+6.  **Prompt Engineering**: A detailed prompt is constructed, providing the LLM with the retrieved document context, image descriptions, and conversational history, along with a set of instructions on how to answer.
+7.  **Response Generation**: The final prompt is sent to the **Groq API**, which generates a coherent and context-aware answer.
 
-Install dependencies:
+---
+
+## 🚀 Setup and Installation
+
+Follow these steps to run the Polymath Chatbot on your local machine.
+
+### 1. Clone the Repository
 
 ```bash
-pip install google-generativeai pillow
-
-🔐 Setup
-Get your API key from Google AI Studio
-
-Set your API key as an environment variable:
-
-Linux / macOS:
-
-bash
-Copy
-Edit
-export GOOGLE_API_KEY="your-api-key-here"
-Windows (CMD):
-
-cmd
-Copy
-Edit
-set GOOGLE_API_KEY=your-api-key-here
-
-💡 Usage
-Run the script:
-
-bash
-Copy
-Edit
-python Newgeminipro.py
-You will be prompted to enter:
-
-The path to a local image (e.g. test.jpg)
-
-Your query (e.g. What does this image represent?)
-
-🧪 Example
-bash
-Copy
-Edit
-Enter the path of the image: dog.jpg
-Enter your query: What breed is this dog?
-Response:
-
-css
-Copy
-Edit
-This appears to be a Labrador Retriever, known for its friendly nature and intelligence.
-🧠 Powered By
-Google Generative AI SDK
-
-Gemini Pro (Multimodal Vision Model)
-
-📌 Notes
-Ensure the image path is correct and the file exists.
-
-The script uses model.generate_content() with both image and text inputs.
-
-Gemini Pro might take a few seconds to generate a response.
+git clone [https://github.com/Kanishk00551/Polymath-Chatbot.git](https://github.com/Kanishk00551/Polymath-Chatbot.git)
+cd Polymath-Chatbot
 
 📄 License
 This project is licensed under the MIT License.
