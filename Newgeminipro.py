@@ -30,8 +30,7 @@ except ImportError:
 # Load environment variables from .env file or Streamlit secrets
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-# CORRECTED: Using GOOGLE_API_KEY as requested by the user
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY") # Using GOOGLE_API_KEY as requested
 
 # --- CONSTANTS ---
 CHROMA_DIR = "chroma_memory_db"
@@ -60,6 +59,9 @@ def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str | None:
     """
     Analyzes an image using the Google Gemini Vision API.
     """
+    if not genai.api_key:
+        st.error("Google API key is not configured. Cannot analyze images.")
+        return None
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         image_part = {
@@ -84,7 +86,6 @@ def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
                 base_image = doc.extract_image(xref)
                 image_bytes = base_image["image"]
                 
-                # Convert all images to JPEG for consistency with the Gemini API
                 img_pil = Image.open(io.BytesIO(image_bytes))
                 if img_pil.mode != "RGB":
                     img_pil = img_pil.convert("RGB")
@@ -128,7 +129,6 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.header("Upload & Process Files")
-    # Image Uploader
     uploaded_image = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
     if uploaded_image and st.session_state.file_status.get(uploaded_image.name) != "processed":
         st.image(uploaded_image, caption="Uploaded Image")
@@ -141,7 +141,6 @@ with col1:
                 st.session_state.messages.append({"role": "assistant", "content": f"Analyzed image: {vision_output}"})
                 st.session_state.file_status[uploaded_image.name] = "processed"
 
-    # PDF Uploader
     uploaded_pdfs = st.file_uploader("Upload PDF(s)", type="pdf", accept_multiple_files=True)
     if uploaded_pdfs:
         for pdf in uploaded_pdfs:
@@ -152,7 +151,7 @@ with col1:
                     f.write(pdf.getbuffer())
 
                 with st.spinner(f"Processing {pdf.name}..."):
-                    try: # Text Processing
+                    try:
                         docs = PyPDFLoader(file_path).load()
                         if docs:
                             chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
@@ -162,7 +161,6 @@ with col1:
                     except Exception as e:
                         st.error(f"Text Processing Error: {e}")
                     
-                    # Image Processing
                     image_paths = extract_images_from_pdf(file_path, os.path.join(PDF_IMAGE_DIR, os.path.splitext(pdf.name)[0]))
                     if image_paths:
                         st.info(f"Found {len(image_paths)} images to analyze.")
@@ -197,14 +195,14 @@ with col2:
                     chat_history = st.session_state.messages[-5:-1]
                     formatted_chat_history = "\n".join([f"{msg['role']}: {msg['content']}" for msg in chat_history])
 
+                    # NEW: Updated prompt to allow general knowledge as a fallback
                     final_prompt = f"""
-You are a helpful and conversational AI assistant. Your task is to answer the user's question using the context provided below.
+You are a helpful and conversational AI assistant. Your task is to answer the user's question by following these steps in order:
 
 **Instructions:**
-1.  Prioritize information from the "Document Context" and "Image Descriptions" to answer questions about uploaded files.
-2.  Use the "Recent Conversation History" to remember details from the current chat, like the user's name or previous questions.
-3.  Synthesize all information to provide a single, coherent answer.
-4.  If you cannot find the answer in any of the provided contexts, politely say that you don't know or cannot answer.
+1.  **First, check the provided context** ("Document Context", "Image Descriptions", "Recent Conversation History").
+2.  **If the answer is found in the context**, answer the user's question based *only* on that information.
+3.  **If the answer is NOT found in the context**, state that you couldn't find the information in the documents, but you can answer using your general knowledge. Then, provide the answer.
 
 ---
 ### Document Context:
@@ -227,9 +225,6 @@ You are a helpful and conversational AI assistant. Your task is to answer the us
                     st.markdown(reply)
                     st.session_state.messages.append({"role": "assistant", "content": reply})
 
-                except Exception as e:
-                    st.error("A critical error occurred during the chat process.")
-                    st.exception(e)
                 except Exception as e:
                     st.error("A critical error occurred during the chat process.")
                     st.exception(e)
