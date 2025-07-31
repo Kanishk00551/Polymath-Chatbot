@@ -13,8 +13,8 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_core.messages import HumanMessage, AIMessage
-
+from langchain_core.messages import HumanMessage
+import google.generativeai as genai
 
 # --- CONFIGURATION & INITIALIZATION ---
 
@@ -27,13 +27,10 @@ try:
 except ImportError:
     print("pysqlite3-binary not found, using standard sqlite3.")
 
-# Remove SSL cert errors if present
-if "SSL_CERT_FILE" in os.environ:
-    del os.environ["SSL_CERT_FILE"]
-
-# Load environment variables from .env file
+# Load environment variables from .env file or Streamlit secrets
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # NEW: Get Gemini Key
 
 # --- CONSTANTS ---
 CHROMA_DIR = "chroma_memory_db"
@@ -50,26 +47,31 @@ llm = ChatGroq(model="gemma2-9b-it", groq_api_key=GROQ_API_KEY)
 embedder = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedder)
 
+# NEW: Configure the Gemini API
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    print("GEMINI_API_KEY not found. Image analysis will be skipped.")
+
 # --- HELPER FUNCTIONS ---
 
-def analyze_image_with_llava(image_bytes: bytes, prompt: str) -> str | None:
-    """Analyzes an image with a local LLaVA model."""
-    img_base64 = base64.b64encode(image_bytes).decode()
+def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str | None:
+    """
+    Analyzes an image using the Google Gemini Vision API.
+    """
+    if not genai.api_key:
+        st.error("Gemini API key is not configured. Cannot analyze images.")
+        return None
     try:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": "llava", "prompt": prompt, "images": [img_base64]},
-            stream=True,
-            timeout=60
-        )
-        response.raise_for_status()
-        vision_output = "".join(
-            json.loads(line.decode("utf-8")).get("response", "")
-            for line in response.iter_lines() if line
-        )
-        return vision_output.strip()
-    except requests.exceptions.RequestException as e:
-        st.error(f"LLaVA Error: {e}")
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        image_part = {
+            "mime_type": "image/jpeg", # Works for jpg, jpeg, png
+            "data": image_bytes
+        }
+        response = model.generate_content([prompt, image_part])
+        return response.text
+    except Exception as e:
+        st.error(f"Gemini Vision API Error: {e}")
         return None
 
 def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
@@ -83,7 +85,14 @@ def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
                 xref = img[0]
                 base_image = doc.extract_image(xref)
                 image_bytes, image_ext = base_image["image"], base_image["ext"]
-                image_filename = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_p{page_num+1}_{img_index}.{image_ext}"
+                # Convert non-jpeg images to jpeg for consistency
+                if image_ext != "jpeg":
+                    img_pil = Image.open(io.BytesIO(image_bytes))
+                    with io.BytesIO() as output:
+                        img_pil.convert("RGB").save(output, format="JPEG")
+                        image_bytes = output.getvalue()
+
+                image_filename = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_p{page_num+1}_{img_index}.jpeg"
                 image_path = os.path.join(output_dir, image_filename)
                 with open(image_path, "wb") as f:
                     f.write(image_bytes)
@@ -108,8 +117,7 @@ with st.sidebar:
         st.session_state.messages, st.session_state.file_status = [], {}
         if os.path.exists(CHROMA_DIR):
             try:
-                db.delete_collection()
-                db.persist()
+                db.delete_collection(); db.persist()
                 st.success("Memory cleared.")
             except Exception as e:
                 st.error(f"Error clearing memory: {e}")
@@ -124,7 +132,7 @@ with col1:
     if uploaded_image and st.session_state.file_status.get(uploaded_image.name) != "processed":
         st.image(uploaded_image, caption="Uploaded Image")
         with st.spinner(f"Analyzing {uploaded_image.name}..."):
-            vision_output = analyze_image_with_llava(uploaded_image.getvalue(), "Describe this image.")
+            vision_output = analyze_image_with_gemini(uploaded_image.getvalue(), "Describe this image in detail.") # Use new function
             if vision_output:
                 st.success("Image analysis complete.")
                 doc = Document(page_content=vision_output, metadata={"role": "vision", "source": uploaded_image.name})
@@ -159,7 +167,7 @@ with col1:
                         st.info(f"Found {len(image_paths)} images to analyze.")
                         for img_path in image_paths:
                             with open(img_path, "rb") as img_file:
-                                vision_output = analyze_image_with_llava(img_file.read(), "Describe this image from a PDF.")
+                                vision_output = analyze_image_with_gemini(img_file.read(), "Describe this image from a PDF.") # Use new function
                             if vision_output:
                                 doc = Document(page_content=vision_output, metadata={"role": "vision", "source": pdf.name})
                                 db.add_documents([doc]); db.persist()
@@ -181,16 +189,13 @@ with col2:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    # Retrieve document context
                     relevant_docs = db.similarity_search(user_input, k=3)
                     text_context = "\n---\n".join([doc.page_content for doc in relevant_docs if doc.metadata.get("role") != "vision"])
                     image_context = "\n---\n".join([doc.page_content for doc in relevant_docs if doc.metadata.get("role") == "vision"])
 
-                    # NEW: Retrieve conversational context (last 4 messages)
-                    chat_history = st.session_state.messages[-5:-1] # Get messages before the current user input
+                    chat_history = st.session_state.messages[-5:-1]
                     formatted_chat_history = "\n".join([f"{msg['role']}: {msg['content']}" for msg in chat_history])
 
-                    # NEW: Updated prompt with conversational history
                     final_prompt = f"""
 You are a helpful and conversational AI assistant. Your task is to answer the user's question using the context provided below.
 
