@@ -59,7 +59,9 @@ def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str | None:
     """
     Analyzes an image using the Google Gemini Vision API.
     """
-
+    if not genai.api_key:
+        st.error("Google API key is not configured. Cannot analyze images.")
+        return None
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         image_part = {
