@@ -30,7 +30,8 @@ except ImportError:
 # Load environment variables from .env file or Streamlit secrets
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Using GEMINI_API_KEY as requested
+# CORRECTED: Using GOOGLE_API_KEY as requested by the user
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # --- CONSTANTS ---
 CHROMA_DIR = "chroma_memory_db"
@@ -51,7 +52,7 @@ db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedder)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 else:
-    print("Warning: GEMINI_API_KEY not found. Image analysis will be skipped.")
+    print("Warning: GOOGLE_API_KEY not found. Image analysis will be skipped.")
 
 # --- HELPER FUNCTIONS ---
 
@@ -60,7 +61,7 @@ def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str | None:
     Analyzes an image using the Google Gemini Vision API.
     """
     if not genai.api_key:
-        st.error("Gemini API key is not configured. Cannot analyze images.")
+        st.error("Google API key is not configured. Cannot analyze images.")
         return None
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -229,6 +230,9 @@ You are a helpful and conversational AI assistant. Your task is to answer the us
                     st.markdown(reply)
                     st.session_state.messages.append({"role": "assistant", "content": reply})
 
+                except Exception as e:
+                    st.error("A critical error occurred during the chat process.")
+                    st.exception(e)
                 except Exception as e:
                     st.error("A critical error occurred during the chat process.")
                     st.exception(e)
