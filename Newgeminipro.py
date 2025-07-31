@@ -16,6 +16,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage, AIMessage
 
 
+# --- CONFIGURATION & INITIALIZATION ---
+
 # This setup is critical for environments where sqlite3 needs a specific implementation
 try:
     __import__('pysqlite3')
@@ -25,7 +27,7 @@ try:
 except ImportError:
     print("pysqlite3-binary not found, using standard sqlite3.")
 
-# Remove SSL cert errors if present (useful in some corporate environments)
+# Remove SSL cert errors if present
 if "SSL_CERT_FILE" in os.environ:
     del os.environ["SSL_CERT_FILE"]
 
@@ -39,12 +41,11 @@ EMBED_MODEL = "all-MiniLM-L6-v2"
 PDF_DIR = os.path.abspath("uploaded_pdfs")
 PDF_IMAGE_DIR = os.path.abspath("pdf_images")
 
-# Create directories if they don't exist to prevent errors
+# Create directories if they don't exist
 os.makedirs(PDF_DIR, exist_ok=True)
 os.makedirs(PDF_IMAGE_DIR, exist_ok=True)
 
 # --- GLOBAL COMPONENT INITIALIZATION ---
-# Initialize LLM, embedder, and vector database once to be efficient
 llm = ChatGroq(model="gemma2-9b-it", groq_api_key=GROQ_API_KEY)
 embedder = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedder)
@@ -52,7 +53,7 @@ db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedder)
 # --- HELPER FUNCTIONS ---
 
 def analyze_image_with_llava(image_bytes: bytes, prompt: str) -> str | None:
-    """Analyzes an image with a local LLaVA model and returns the description."""
+    """Analyzes an image with a local LLaVA model."""
     img_base64 = base64.b64encode(image_bytes).decode()
     try:
         response = requests.post(
@@ -61,24 +62,18 @@ def analyze_image_with_llava(image_bytes: bytes, prompt: str) -> str | None:
             stream=True,
             timeout=60
         )
-        response.raise_for_status()  # Will raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         vision_output = "".join(
             json.loads(line.decode("utf-8")).get("response", "")
             for line in response.iter_lines() if line
         )
         return vision_output.strip()
-    except requests.exceptions.ConnectionError:
-        st.error("Connection to LLaVA server failed. Is it running at http://localhost:11434?")
-        return None
-    except requests.exceptions.Timeout:
-        st.error("LLaVA server request timed out. The server may be busy or slow.")
-        return None
     except requests.exceptions.RequestException as e:
-        st.error(f"An error occurred with the LLaVA request: {e}")
+        st.error(f"LLaVA Error: {e}")
         return None
 
 def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
-    """Extracts images from a PDF and saves them to a directory."""
+    """Extracts images from a PDF."""
     saved_images = []
     try:
         doc = fitz.open(pdf_path)
@@ -87,35 +82,30 @@ def extract_images_from_pdf(pdf_path: str, output_dir: str) -> list[str]:
             for img_index, img in enumerate(doc.get_page_images(page_num)):
                 xref = img[0]
                 base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image_ext = base_image["ext"]
+                image_bytes, image_ext = base_image["image"], base_image["ext"]
                 image_filename = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_p{page_num+1}_{img_index}.{image_ext}"
                 image_path = os.path.join(output_dir, image_filename)
                 with open(image_path, "wb") as f:
                     f.write(image_bytes)
                 saved_images.append(image_path)
     except Exception as e:
-        st.error(f"Error extracting images from PDF: {e}")
+        st.error(f"PDF Image Extraction Error: {e}")
     return saved_images
 
-# --- STREAMLIT UI LAYOUT ---
+# --- STREAMLIT UI ---
 
 st.set_page_config(page_title="Polymath Chatbot", page_icon="🧠", layout="wide")
 st.title("🧠 Polymath Chatbot")
 
-# Initialize session state variables if they don't exist
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "file_status" not in st.session_state:
     st.session_state.file_status = {}
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("Controls")
     if st.button("Clear Memory & Reset Chat"):
-        st.session_state.messages = []
-        st.session_state.file_status = {}
-        # Safely delete the collection if the directory exists
+        st.session_state.messages, st.session_state.file_status = [], {}
         if os.path.exists(CHROMA_DIR):
             try:
                 db.delete_collection()
@@ -125,28 +115,24 @@ with st.sidebar:
                 st.error(f"Error clearing memory: {e}")
         st.rerun()
 
-# --- MAIN CONTENT ---
 col1, col2 = st.columns(2)
 
 with col1:
     st.header("Upload & Process Files")
-    # --- IMAGE UPLOADER ---
+    # Image Uploader
     uploaded_image = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
-    if uploaded_image:
-        if st.session_state.file_status.get(uploaded_image.name) != "processed":
-            st.image(uploaded_image, caption="Uploaded Image")
-            with st.spinner(f"Analyzing {uploaded_image.name}..."):
-                image_bytes = uploaded_image.getvalue()
-                vision_output = analyze_image_with_llava(image_bytes, "Describe this image in detail.")
-                if vision_output:
-                    st.success("Image analysis complete.")
-                    vision_doc = Document(page_content=vision_output, metadata={"role": "vision", "source": uploaded_image.name})
-                    db.add_documents([vision_doc])
-                    db.persist()
-                    st.session_state.messages.append({"role": "assistant", "content": f"Analyzed image: {vision_output}"})
-                    st.session_state.file_status[uploaded_image.name] = "processed"
+    if uploaded_image and st.session_state.file_status.get(uploaded_image.name) != "processed":
+        st.image(uploaded_image, caption="Uploaded Image")
+        with st.spinner(f"Analyzing {uploaded_image.name}..."):
+            vision_output = analyze_image_with_llava(uploaded_image.getvalue(), "Describe this image.")
+            if vision_output:
+                st.success("Image analysis complete.")
+                doc = Document(page_content=vision_output, metadata={"role": "vision", "source": uploaded_image.name})
+                db.add_documents([doc]); db.persist()
+                st.session_state.messages.append({"role": "assistant", "content": f"Analyzed image: {vision_output}"})
+                st.session_state.file_status[uploaded_image.name] = "processed"
 
-    # --- PDF UPLOADER ---
+    # PDF Uploader
     uploaded_pdfs = st.file_uploader("Upload PDF(s)", type="pdf", accept_multiple_files=True)
     if uploaded_pdfs:
         for pdf in uploaded_pdfs:
@@ -156,49 +142,37 @@ with col1:
                 with open(file_path, "wb") as f:
                     f.write(pdf.getbuffer())
 
-                # Process text
-                with st.spinner(f"Embedding text from {pdf.name}..."):
+                with st.spinner(f"Processing {pdf.name}..."):
+                    # Text
                     try:
-                        loader = PyPDFLoader(file_path)
-                        docs = loader.load()
+                        docs = PyPDFLoader(file_path).load()
                         if docs:
-                            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-                            chunks = splitter.split_documents(docs)
-                            for chunk in chunks:
-                                chunk.metadata["source"] = pdf.name
-                            db.add_documents(chunks)
-                            db.persist()
+                            chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
+                            for chunk in chunks: chunk.metadata["source"] = pdf.name
+                            db.add_documents(chunks); db.persist()
                             st.success(f"Embedded {len(chunks)} text chunks.")
                     except Exception as e:
-                        st.error(f"Error processing text from {pdf.name}: {e}")
-
-                # Process images
-                with st.spinner(f"Extracting and analyzing images from {pdf.name}..."):
-                    image_dir = os.path.join(PDF_IMAGE_DIR, os.path.splitext(pdf.name)[0])
-                    image_paths = extract_images_from_pdf(file_path, image_dir)
+                        st.error(f"Text Processing Error: {e}")
+                    # Images
+                    image_paths = extract_images_from_pdf(file_path, os.path.join(PDF_IMAGE_DIR, os.path.splitext(pdf.name)[0]))
                     if image_paths:
                         st.info(f"Found {len(image_paths)} images to analyze.")
                         for img_path in image_paths:
                             with open(img_path, "rb") as img_file:
-                                image_bytes = img_file.read()
-                            vision_output = analyze_image_with_llava(image_bytes, "Describe this image from a PDF.")
+                                vision_output = analyze_image_with_llava(img_file.read(), "Describe this image from a PDF.")
                             if vision_output:
                                 doc = Document(page_content=vision_output, metadata={"role": "vision", "source": pdf.name})
-                                db.add_documents([doc])
-                                db.persist()
-                        st.success(f"Finished analyzing images from {pdf.name}.")
-
+                                db.add_documents([doc]); db.persist()
+                        st.success(f"Finished image analysis from {pdf.name}.")
                 st.session_state.file_status[pdf.name] = "processed"
-                st.success(f"Completed processing for {pdf.name}")
 
+# --- CHATBOT SECTION ---
 with col2:
     st.header("Chat Window")
-    # Display chat messages
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Chat input
     if user_input := st.chat_input("Ask about the uploaded content..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
@@ -207,20 +181,35 @@ with col2:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    relevant_docs = db.similarity_search(user_input, k=5)
+                    # Retrieve document context
+                    relevant_docs = db.similarity_search(user_input, k=3)
                     text_context = "\n---\n".join([doc.page_content for doc in relevant_docs if doc.metadata.get("role") != "vision"])
                     image_context = "\n---\n".join([doc.page_content for doc in relevant_docs if doc.metadata.get("role") == "vision"])
 
+                    # NEW: Retrieve conversational context (last 4 messages)
+                    chat_history = st.session_state.messages[-5:-1] # Get messages before the current user input
+                    formatted_chat_history = "\n".join([f"{msg['role']}: {msg['content']}" for msg in chat_history])
+
+                    # NEW: Updated prompt with conversational history
                     final_prompt = f"""
-You are an AI assistant. Answer the user's question based ONLY on the context provided below.
-If the context does not contain the answer, state "I cannot answer this based on the provided documents."
-Do not use any external knowledge.
+You are a helpful and conversational AI assistant. Your task is to answer the user's question using the context provided below.
 
-### Text Context:
-{text_context if text_context.strip() else "No relevant text found."}
+**Instructions:**
+1.  Prioritize information from the "Document Context" and "Image Descriptions" to answer questions about uploaded files.
+2.  Use the "Recent Conversation History" to remember details from the current chat, like the user's name or previous questions.
+3.  Synthesize all information to provide a single, coherent answer.
+4.  If you cannot find the answer in any of the provided contexts, politely say that you don't know or cannot answer.
 
-### Relevant Image Descriptions:
+---
+### Document Context:
+{text_context if text_context.strip() else "No relevant documents found."}
+---
+### Image Descriptions:
 {image_context if image_context.strip() else "No relevant images found."}
+---
+### Recent Conversation History:
+{formatted_chat_history if formatted_chat_history.strip() else "This is the beginning of the conversation."}
+---
 
 ### User Question:
 {user_input}
@@ -234,4 +223,4 @@ Do not use any external knowledge.
 
                 except Exception as e:
                     st.error("A critical error occurred during the chat process.")
-                    st.exception(e) # This will print the full error traceback in the Streamlit UI
+                    st.exception(e)
